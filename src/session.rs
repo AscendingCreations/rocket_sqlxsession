@@ -163,7 +163,7 @@ impl SQLxSessionStore {
         query.replace("%%TABLE_NAME%%", &self.config.table_name)
     }
 
-    async fn connection(&self) -> sqlx::Result<PoolConnection<sqlx::Postgres>> {
+    pub async fn connection(&self) -> sqlx::Result<PoolConnection<sqlx::Postgres>> {
         self.client.acquire().await
     }
 
