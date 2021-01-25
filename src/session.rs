@@ -432,8 +432,8 @@ impl<'a> SQLxSession<'a> {
         block_on(self.store.count()).unwrap_or(0i64)
     }
 
-    pub fn store(&self) -> &State<SQLxSessionStore> {
-        &self.store
+    pub fn connection(&self) -> sqlx::Result<PoolConnection<sqlx::Postgres>> {
+        &self.store.connection()
     }
 }
 
