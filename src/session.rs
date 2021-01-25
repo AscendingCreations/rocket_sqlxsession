@@ -551,10 +551,9 @@ impl Fairing for SqlxSessionFairing {
         connect_opts = connect_opts.host(&self.config.host[..]);
         connect_opts = connect_opts.port(self.config.port);
 
-        let pg_pool = match PgPoolOptions::new()
+        let pg_pool = match block_on(PgPoolOptions::new()
             .max_connections(self.config.max_connections)
-            .connect_with(connect_opts)
-            .await
+            .connect_with(connect_opts))
         {
             Ok(n) => n,
             Err(_) => return Ok(rocket),
