@@ -294,22 +294,25 @@ impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession<'a> {
                     // This branch runs less often, and we already have write access,
                     // let's check if any sessions expired. We don't want to hog memory
                     // forever by abandoned sessions (e.g. when a client lost their cookie)
-
-                    let timers = store.timers.upgradable_read();
-                    // Throttle by memory lifespan - e.g. sweep every hour
-                    if timers.last_expiry_sweep <= Utc::now() {
-                        let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
-                        store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
-                        timers.last_expiry_sweep = Utc::now() + store.config.memory_lifespan;
+                    {
+                        let timers = store.timers.upgradable_read();
+                        // Throttle by memory lifespan - e.g. sweep every hour
+                        if timers.last_expiry_sweep <= Utc::now() {
+                            let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
+                            store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
+                            timers.last_expiry_sweep = Utc::now() + store.config.memory_lifespan;
+                        }
                     }
 
-                    let timers = store.timers.upgradable_read();
-                    // Throttle by database lifespan - e.g. sweep every 6 hours
-                    if timers.last_database_expiry_sweep <= Utc::now() {
-                        let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
-                        store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
-                        let _ = block_on(store.cleanup());
-                        timers.last_database_expiry_sweep = Utc::now() + store.config.lifespan;
+                    {
+                        let timers = store.timers.upgradable_read();
+                        // Throttle by database lifespan - e.g. sweep every 6 hours
+                        if timers.last_database_expiry_sweep <= Utc::now() {
+                            let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
+                            store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
+                            let _ = block_on(store.cleanup());
+                            timers.last_database_expiry_sweep = Utc::now() + store.config.lifespan;
+                        }
                     }
 
                     let session = if !id.0.is_empty() {
@@ -553,7 +556,8 @@ impl Fairing for SqlxSessionFairing {
 
         let pg_pool = match PgPoolOptions::new()
             .max_connections(self.config.max_connections)
-            .connect_with(connect_opts).await
+            .connect_with(connect_opts)
+            .await
         {
             Ok(n) => n,
             Err(_) => return Ok(rocket),
