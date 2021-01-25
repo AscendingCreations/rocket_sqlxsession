@@ -2,8 +2,12 @@
 name = "rocket_sqlxsession"
 version = "0.1.0"
 authors = ["Andrew Wheeler <genusistimelord@gmail.com>"]
+description = "Flask-sessionstore like library using SQLx for Rocket.rs."
 edition = "2018"
-
+license = "MIT"
+repository = "https://github.com/genusistimelord/rocket_sqlxsession"
+readme = "README.md"
+keywords = ["rocket", "session", "flask"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
