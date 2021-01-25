@@ -432,7 +432,7 @@ pub struct SqlxSessionFairing {
 }
 
 impl SqlxSessionFairing {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
