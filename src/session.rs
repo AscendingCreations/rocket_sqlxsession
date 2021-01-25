@@ -433,7 +433,7 @@ impl<'a> SQLxSession<'a> {
     }
 
     pub fn connection(&self) -> sqlx::Result<PoolConnection<sqlx::Postgres>> {
-        &self.store.connection()
+        block_on(self.store.connection())
     }
 }
 
