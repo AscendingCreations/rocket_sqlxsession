@@ -431,6 +431,10 @@ impl<'a> SQLxSession<'a> {
     pub fn count(&self) -> i64 {
         block_on(self.store.count()).unwrap_or(0i64)
     }
+
+    pub fn store(&self) -> &State<SQLxSessionStore> {
+        &self.store
+    }
 }
 
 /// Fairing struct
