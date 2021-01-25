@@ -22,7 +22,7 @@ fn main() {
 
 #[get("/")]
 fn index(sqlxsession: SQLxSession) -> String {
-    let mut count: usize = sqlxsession.get("count");
+    let mut count: usize = sqlxsession.get("count").unwrap_or(0);
     count += 1;
     sqlxsession.set("count", count);
 
