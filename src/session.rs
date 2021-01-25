@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgConnectOptions, PgPool, PgPoolOptions},
+    ConnectOptions,
 };
+use log::LevelFilter;
 
 use std::{
     borrow::Cow,
@@ -54,6 +56,8 @@ pub struct SqlxSessionConfig {
     /// this works fine since the data can stay in the database till its needed
     /// if not yet expired.
     memory_lifespan: Duration,
+    /// Log Level for the database
+    log_level: LevelFilter,
 }
 
 impl Default for SqlxSessionConfig {
@@ -73,6 +77,7 @@ impl Default for SqlxSessionConfig {
             max_connections: 5,
             /// Unload memory after 60mins if it has not been accessed.
             memory_lifespan: Duration::minutes(60),
+            log_level: LevelFilter::Debug,
         }
     }
 }
@@ -535,6 +540,14 @@ impl SqlxSessionFairing {
         self.config.port = port;
         self
     }
+
+    /// Set session database logging level
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_loglevel(mut self, level: LevelFilter) -> Self {
+        self.config.log_level = level;
+        self
+    }
 }
 
 #[rocket::async_trait]
@@ -548,6 +561,7 @@ impl Fairing for SqlxSessionFairing {
 
     async fn on_attach(&self, rocket: Rocket) -> std::result::Result<Rocket, Rocket> {
         let mut connect_opts = PgConnectOptions::new();
+        connect_opts.log_statements(self.config.log_level);
         connect_opts = connect_opts.database(&self.config.database[..]);
         connect_opts = connect_opts.username(&self.config.username[..]);
         connect_opts = connect_opts.password(&self.config.password[..]);
