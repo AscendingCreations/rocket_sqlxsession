@@ -437,6 +437,7 @@ impl SQLxSession {
 /// Fairing struct
 #[derive(Default)]
 pub struct SqlxSessionFairing {
+    poll: Option<PgPool>,
     config: SqlxSessionConfig,
 }
 
@@ -549,6 +550,14 @@ impl SqlxSessionFairing {
         self.config.log_level = level;
         self
     }
+
+    /// Set session database Poll Directly used for sharing Poll.
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_poll(mut self, poll: PgPool) -> Self {
+        self.poll = Some(poll);
+        self
+    }
 }
 
 #[rocket::async_trait]
@@ -561,24 +570,29 @@ impl Fairing for SqlxSessionFairing {
     }
 
     async fn on_attach(&self, rocket: Rocket) -> std::result::Result<Rocket, Rocket> {
-        let mut connect_opts = PgConnectOptions::new();
-        connect_opts.log_statements(self.config.log_level);
-        connect_opts = connect_opts.database(&self.config.database[..]);
-        connect_opts = connect_opts.username(&self.config.username[..]);
-        connect_opts = connect_opts.password(&self.config.password[..]);
-        connect_opts = connect_opts.host(&self.config.host[..]);
-        connect_opts = connect_opts.port(self.config.port);
+        let session_store = if let Some(poll) = &self.poll {
+            SQLxSessionStore::new(poll.clone(), self.config.clone())
+        } else {
+            let mut connect_opts = PgConnectOptions::new();
+            connect_opts.log_statements(self.config.log_level);
+            connect_opts = connect_opts.database(&self.config.database[..]);
+            connect_opts = connect_opts.username(&self.config.username[..]);
+            connect_opts = connect_opts.password(&self.config.password[..]);
+            connect_opts = connect_opts.host(&self.config.host[..]);
+            connect_opts = connect_opts.port(self.config.port);
 
-        let pg_pool = match PgPoolOptions::new()
-            .max_connections(self.config.max_connections)
-            .connect_with(connect_opts)
-            .await
-        {
-            Ok(n) => n,
-            Err(_) => return Ok(rocket),
+            let pg_pool = match PgPoolOptions::new()
+                .max_connections(self.config.max_connections)
+                .connect_with(connect_opts)
+                .await
+            {
+                Ok(n) => n,
+                Err(_) => return Ok(rocket),
+            };
+
+            SQLxSessionStore::new(pg_pool, self.config.clone())
         };
 
-        let session_store = SQLxSessionStore::new(pg_pool, self.config.clone());
         match session_store.migrate().await {
             Ok(()) => {}
             Err(_) => {}
