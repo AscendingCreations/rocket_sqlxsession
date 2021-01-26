@@ -19,6 +19,7 @@ use sqlx::{
 use log::LevelFilter;
 
 use std::{
+    sync::Arc,
     borrow::Cow,
     collections::HashMap,
     fmt::{self, Display, Formatter},
@@ -119,12 +120,12 @@ pub struct SQLxTimers {
     pub last_database_expiry_sweep: DateTime<Utc>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SQLxSessionStore {
     pub client: PgPool,
-    pub inner: RwLock<HashMap<String, Mutex<SQLxSessionData>>>,
+    pub inner: Arc<RwLock<HashMap<String, Mutex<SQLxSessionData>>>>,
     pub config: SqlxSessionConfig,
-    pub timers: RwLock<SQLxTimers>,
+    pub timers: Arc<RwLock<SQLxTimers>>,
 }
 
 impl SQLxSessionStore {
@@ -133,12 +134,12 @@ impl SQLxSessionStore {
             client,
             inner: Default::default(),
             config,
-            timers: RwLock::new(SQLxTimers {
+            timers: Arc::new(RwLock::new(SQLxTimers {
                 // the first expiry sweep is scheduled one lifetime from start-up
                 last_expiry_sweep: Utc::now() + Duration::hours(1),
                 // the first expiry sweep is scheduled one lifetime from start-up
                 last_database_expiry_sweep: Utc::now() + Duration::hours(6),
-            }),
+            })),
         }
     }
 
@@ -255,13 +256,13 @@ impl Display for SQLxSessionID {
 }
 
 #[derive(Debug)]
-pub struct SQLxSession<'a> {
-    store: State<'a, SQLxSessionStore>,
-    id: &'a SQLxSessionID,
+pub struct SQLxSession {
+    store: SQLxSessionStore,
+    id: SQLxSessionID,
 }
 
 #[rocket::async_trait]
-impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession<'a> {
+impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession {
     type Error = ();
 
     async fn from_request(request: &'a Request<'r>) -> Outcome<Self, (Status, Self::Error), ()> {
@@ -369,14 +370,14 @@ impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession<'a> {
 
                     new_id
                 }
-            }),
+            }).clone(),
 
-            store,
+            store: store.inner().clone(),
         })
     }
 }
 
-impl<'a> SQLxSession<'a> {
+impl SQLxSession {
     pub fn tap<T: DeserializeOwned>(
         &self,
         func: impl FnOnce(&mut SQLxSessionData) -> Option<T>,
