@@ -621,9 +621,6 @@ impl Fairing for SqlxSessionFairing {
             }
 
             response.adjoin_header(request.cookies().get(&self.config.cookie_name).unwrap());
-           /* response.adjoin_header(
-                Cookie::build(self.config.cookie_name.clone(), session_id.0.clone()).finish(),
-            );*/
         }
     }
 }
