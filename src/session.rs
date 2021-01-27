@@ -272,7 +272,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession {
                 let store_ug = store.inner.upgradable_read();
 
                 // Resolve session ID
-                let id = if let Some(cookie) = request.cookies().get(&store.config.cookie_name) {
+                let id = if let Some(cookie) = request.cookies().get_private(&store.config.cookie_name) {
                     SQLxSessionID(cookie.value().to_string())
                 } else {
                     SQLxSessionID("".to_string())
@@ -617,9 +617,11 @@ impl Fairing for SqlxSessionFairing {
                     }
                 }
             }
-            response.adjoin_header(
+
+            request.cookies().add_private(Cookie::new(self.config.cookie_name.clone(), session_id.0.clone()));
+           /* response.adjoin_header(
                 Cookie::build(self.config.cookie_name.clone(), session_id.0.clone()).finish(),
-            );
+            );*/
         }
     }
 }
