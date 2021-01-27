@@ -619,7 +619,7 @@ impl Fairing for SqlxSessionFairing {
             }
 
             request.cookies().add_private(Cookie::new(self.config.cookie_name.clone(), session_id.0.clone()));
-            response.adjoin_header(request.cookies().get(&self.config.cookie_name).unwrap());
+            response.adjoin_header(request.cookies().get_pending(&self.config.cookie_name).unwrap());
            /* response.adjoin_header(
                 Cookie::build(self.config.cookie_name.clone(), session_id.0.clone()).finish(),
             );*/
