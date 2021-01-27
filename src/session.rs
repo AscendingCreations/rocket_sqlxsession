@@ -355,6 +355,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession {
                             }
                         });
 
+                        request.cookies().add_private(Cookie::new(store.config.cookie_name.clone(), new_id.0.clone()));
+
                         SQLxSessionData {
                             id: new_id.0.clone(),
                             data: HashMap::new(),
@@ -618,8 +620,7 @@ impl Fairing for SqlxSessionFairing {
                 }
             }
 
-            request.cookies().add_private(Cookie::new(self.config.cookie_name.clone(), session_id.0.clone()));
-            response.adjoin_header(request.cookies().get_pending(&self.config.cookie_name).unwrap());
+            response.adjoin_header(request.cookies().get(&self.config.cookie_name).unwrap());
            /* response.adjoin_header(
                 Cookie::build(self.config.cookie_name.clone(), session_id.0.clone()).finish(),
             );*/
