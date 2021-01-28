@@ -1,2 +1,4 @@
 mod session;
-pub use session::{SQLxSession, SQLxSessionStore, SqlxSessionConfig, SqlxSessionFairing};
+pub use session::{
+    SQLxSession, SQLxSessionID, SQLxSessionStore, SqlxSessionConfig, SqlxSessionFairing,
+};
