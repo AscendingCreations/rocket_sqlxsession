@@ -250,6 +250,10 @@ impl SQLxSessionStore {
 pub struct SQLxSessionID(String);
 
 impl SQLxSessionID {
+    pub fn new(string: String) -> SQLxSessionID {
+        SQLxSessionID(string)
+    }
+
     pub fn inner(&self) -> &String{
         &self.0
     }
