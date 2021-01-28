@@ -249,6 +249,12 @@ impl SQLxSessionStore {
 #[derive(Clone, Debug)]
 pub struct SQLxSessionID(String);
 
+impl SQLxSessionID {
+    pub fn inner(&self) -> &String{
+        &self.0
+    }
+}
+
 impl Display for SQLxSessionID {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
