@@ -6,16 +6,18 @@ Adding long term stored cookie-based sessions simular too Flask-SessionStore to 
 #![feature(proc_macro_hygiene, decl_macro)]
 #[macro_use] extern crate rocket;
 
-use rocket_sqlxsession::{SqlxSessionFairing, SQLxSession};
+use rocket_sqlxsession::{SqlxSessionFairing, SqlxSessionConfig, SQLxSession};
 
 fn main() {
-    rocket::ignite()
-        .attach(SqlxSessionFairing::new()
+    let config = SqlxSessionConfig::default()
             .with_database("databasename")
             .with_username("username")
             .with_password("password")
             .with_host("localhost")
-            .with_port("5432"))
+            .with_port("5432");
+
+    rocket::ignite()
+        .attach(SqlxSessionFairing::new(config, None))
         .mount("/", routes![index])
         .launch();
 }

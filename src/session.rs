@@ -1,13 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
 use futures::executor::block_on;
+use log::LevelFilter;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use rand::{rngs::OsRng, Rng};
 use rocket::{
     fairing::{self, Fairing, Info},
     http::{Cookie, Status},
-    outcome::Outcome,
-    request::FromRequest,
-    try_outcome, Request, Response, Rocket, State,
+    outcome::{try_outcome, Outcome},
+    request::{FromRequest, Request},
+    Build, Response, Rocket, State,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -16,13 +17,12 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     ConnectOptions,
 };
-use log::LevelFilter;
 
 use std::{
-    sync::Arc,
     borrow::Cow,
     collections::HashMap,
     fmt::{self, Display, Formatter},
+    sync::Arc,
 };
 
 pub use anyhow::Error;
@@ -59,6 +59,113 @@ pub struct SqlxSessionConfig {
     memory_lifespan: Duration,
     /// Log Level for the database
     log_level: LevelFilter,
+}
+
+impl SqlxSessionConfig {
+    /// Set session database pools max connections limit.
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn set_max_connections(mut self, max: u32) -> Self {
+        let max = std::cmp::max(max, 1);
+        self.max_connections = max;
+        self
+    }
+
+    /// Set session lifetime (expiration time) within database storage.
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_lifetime(mut self, time: Duration) -> Self {
+        self.lifespan = time;
+        self
+    }
+
+    /// Set session lifetime (expiration time) within Memory storage.
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_memory_lifetime(mut self, time: Duration) -> Self {
+        self.memory_lifespan = time;
+        self
+    }
+
+    /// Set session cookie name
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_cookie_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.cookie_name = name.into();
+        self
+    }
+
+    /// Set session cookie length
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_cookie_len(mut self, length: usize) -> Self {
+        self.cookie_len = length;
+        self
+    }
+
+    /// Set session cookie path
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_cookie_path(mut self, path: impl Into<Cow<'static, str>>) -> Self {
+        self.cookie_path = path.into();
+        self
+    }
+
+    /// Set session database name
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_database(mut self, database: impl Into<Cow<'static, str>>) -> Self {
+        self.database = database.into();
+        self
+    }
+
+    /// Set session username
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_username(mut self, username: impl Into<Cow<'static, str>>) -> Self {
+        self.username = username.into();
+        self
+    }
+
+    /// Set session user password
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_password(mut self, password: impl Into<Cow<'static, str>>) -> Self {
+        self.password = password.into();
+        self
+    }
+
+    /// Set session database table name
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_table_name(mut self, table_name: impl Into<Cow<'static, str>>) -> Self {
+        self.table_name = table_name.into();
+        self
+    }
+
+    /// Set session database hostname
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_host(mut self, host: impl Into<Cow<'static, str>>) -> Self {
+        self.host = host.into();
+        self
+    }
+
+    /// Set session database port
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    /// Set session database logging level
+    ///
+    /// Call on the fairing before passing it to `rocket.attach()`
+    pub fn with_loglevel(mut self, level: LevelFilter) -> Self {
+        self.log_level = level;
+        self
+    }
 }
 
 impl Default for SqlxSessionConfig {
@@ -106,11 +213,7 @@ impl Default for SQLxSessionData {
 
 impl SQLxSessionData {
     pub fn validate(&self) -> bool {
-        if self.expires < Utc::now() {
-            false
-        } else {
-            true
-        }
+        self.expires >= Utc::now()
     }
 }
 
@@ -226,7 +329,7 @@ impl SQLxSessionStore {
         Ok(())
     }
 
-    pub async fn destroy_session(&self, id: &String) -> Result {
+    pub async fn destroy_session(&self, id: &str) -> Result {
         let mut connection = self.connection().await?;
         sqlx::query(&self.substitute_table_name("DELETE FROM %%TABLE_NAME%% WHERE id = $1"))
             .bind(&id)
@@ -254,7 +357,7 @@ impl SQLxSessionID {
         SQLxSessionID(string)
     }
 
-    pub fn inner(&self) -> &String{
+    pub fn inner(&self) -> &String {
         &self.0
     }
 }
@@ -272,117 +375,126 @@ pub struct SQLxSession {
 }
 
 #[rocket::async_trait]
-impl<'a, 'r> FromRequest<'a, 'r> for SQLxSession {
+impl<'r> FromRequest<'r> for SQLxSession {
     type Error = ();
 
-    async fn from_request(request: &'a Request<'r>) -> Outcome<Self, (Status, Self::Error), ()> {
-        let store: State<SQLxSessionStore> = try_outcome!(request.guard().await);
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, (Status, Self::Error), ()> {
+        let store = try_outcome!(request.guard::<&State<SQLxSessionStore>>().await);
         Outcome::Success(SQLxSession {
-            id: request.local_cache(|| {
-                let store_ug = store.inner.upgradable_read();
+            id: request
+                .local_cache(|| {
+                    let store_ug = store.inner.upgradable_read();
 
-                // Resolve session ID
-                let id = if let Some(cookie) = request.cookies().get_private(&store.config.cookie_name) {
-                    SQLxSessionID(cookie.value().to_string())
-                } else {
-                    SQLxSessionID("".to_string())
-                };
-
-                if let Some(m) = store_ug.get(&id.0) {
-                    let mut inner = m.lock();
-
-                    if inner.expires < Utc::now() || inner.destroy {
-                        // Database Session expired, reuse the ID but drop data.
-                        inner.data = HashMap::new();
-                    }
-
-                    // Session is extended by making a request with valid ID
-                    inner.expires = Utc::now() + store.config.lifespan;
-                    inner.autoremove = Utc::now() + store.config.memory_lifespan;
-
-                    id
-                } else {
-                    // --- ID missing or session not found ---
-
-                    // Get exclusive write access to the map
-                    let mut store_wg = RwLockUpgradableReadGuard::upgrade(store_ug);
-
-                    // This branch runs less often, and we already have write access,
-                    // let's check if any sessions expired. We don't want to hog memory
-                    // forever by abandoned sessions (e.g. when a client lost their cookie)
+                    // Resolve session ID
+                    let id = if let Some(cookie) =
+                        request.cookies().get_private(&store.config.cookie_name)
                     {
-                        let timers = store.timers.upgradable_read();
-                        // Throttle by memory lifespan - e.g. sweep every hour
-                        if timers.last_expiry_sweep <= Utc::now() {
-                            let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
-                            store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
-                            timers.last_expiry_sweep = Utc::now() + store.config.memory_lifespan;
-                        }
-                    }
+                        SQLxSessionID(cookie.value().to_string())
+                    } else {
+                        SQLxSessionID("".to_string())
+                    };
 
-                    {
-                        let timers = store.timers.upgradable_read();
-                        // Throttle by database lifespan - e.g. sweep every 6 hours
-                        if timers.last_database_expiry_sweep <= Utc::now() {
-                            let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
-                            store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
-                            let _ = block_on(store.cleanup());
-                            timers.last_database_expiry_sweep = Utc::now() + store.config.lifespan;
-                        }
-                    }
+                    if let Some(m) = store_ug.get(&id.0) {
+                        let mut inner = m.lock();
 
-                    let session = if !id.0.is_empty() {
-                        // Attempt to load from database if fail then we will create a new session.
-                        let mut sess = block_on(store.load_session(id.0.clone()))
-                            .ok()
-                            .flatten()
-                            .unwrap_or(SQLxSessionData {
-                                id: id.0.clone(),
+                        if inner.expires < Utc::now() || inner.destroy {
+                            // Database Session expired, reuse the ID but drop data.
+                            inner.data = HashMap::new();
+                        }
+
+                        // Session is extended by making a request with valid ID
+                        inner.expires = Utc::now() + store.config.lifespan;
+                        inner.autoremove = Utc::now() + store.config.memory_lifespan;
+
+                        id
+                    } else {
+                        // --- ID missing or session not found ---
+
+                        // Get exclusive write access to the map
+                        let mut store_wg = RwLockUpgradableReadGuard::upgrade(store_ug);
+
+                        // This branch runs less often, and we already have write access,
+                        // let's check if any sessions expired. We don't want to hog memory
+                        // forever by abandoned sessions (e.g. when a client lost their cookie)
+                        {
+                            let timers = store.timers.upgradable_read();
+                            // Throttle by memory lifespan - e.g. sweep every hour
+                            if timers.last_expiry_sweep <= Utc::now() {
+                                let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
+                                store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
+                                timers.last_expiry_sweep =
+                                    Utc::now() + store.config.memory_lifespan;
+                            }
+                        }
+
+                        {
+                            let timers = store.timers.upgradable_read();
+                            // Throttle by database lifespan - e.g. sweep every 6 hours
+                            if timers.last_database_expiry_sweep <= Utc::now() {
+                                let mut timers = RwLockUpgradableReadGuard::upgrade(timers);
+                                store_wg.retain(|_k, v| v.lock().autoremove > Utc::now());
+                                let _ = block_on(store.cleanup());
+                                timers.last_database_expiry_sweep =
+                                    Utc::now() + store.config.lifespan;
+                            }
+                        }
+
+                        let session = if !id.0.is_empty() {
+                            // Attempt to load from database if fail then we will create a new session.
+                            let mut sess = block_on(store.load_session(id.0.clone()))
+                                .ok()
+                                .flatten()
+                                .unwrap_or(SQLxSessionData {
+                                    id: id.0.clone(),
+                                    data: HashMap::new(),
+                                    expires: Utc::now() + Duration::hours(6),
+                                    destroy: false,
+                                    autoremove: Utc::now() + store.config.memory_lifespan,
+                                });
+
+                            if !sess.validate() || sess.destroy {
+                                sess.data = HashMap::new();
+                                sess.expires = Utc::now() + Duration::hours(6);
+                                sess.autoremove = Utc::now() + store.config.memory_lifespan;
+                            }
+
+                            sess
+                        } else {
+                            // Find a new unique ID - we are still safely inside the write guard
+                            let new_id = SQLxSessionID(loop {
+                                let token: String = OsRng
+                                    .sample_iter(&rand::distributions::Alphanumeric)
+                                    .take(store.config.cookie_len)
+                                    .map(char::from)
+                                    .collect();
+
+                                if !store_wg.contains_key(&token) {
+                                    break token;
+                                }
+                            });
+
+                            request.cookies().add_private(Cookie::new(
+                                store.config.cookie_name.clone(),
+                                new_id.0.clone(),
+                            ));
+
+                            SQLxSessionData {
+                                id: new_id.0.clone(),
                                 data: HashMap::new(),
                                 expires: Utc::now() + Duration::hours(6),
                                 destroy: false,
                                 autoremove: Utc::now() + store.config.memory_lifespan,
-                            });
-
-                        if (!sess.validate() || sess.destroy) {
-                            sess.data = HashMap::new();
-                            sess.expires = Utc::now() + Duration::hours(6);
-                            sess.autoremove = Utc::now() + store.config.memory_lifespan;
-                        }
-
-                        sess
-                    } else {
-                        // Find a new unique ID - we are still safely inside the write guard
-                        let new_id = SQLxSessionID(loop {
-                            let token: String = OsRng
-                                .sample_iter(&rand::distributions::Alphanumeric)
-                                .take(store.config.cookie_len)
-                                .map(char::from)
-                                .collect();
-
-                            if !store_wg.contains_key(&token) {
-                                break token;
                             }
-                        });
+                        };
 
-                        request.cookies().add_private(Cookie::new(store.config.cookie_name.clone(), new_id.0.clone()));
+                        let new_id = SQLxSessionID(session.id.clone());
 
-                        SQLxSessionData {
-                            id: new_id.0.clone(),
-                            data: HashMap::new(),
-                            expires: Utc::now() + Duration::hours(6),
-                            destroy: false,
-                            autoremove: Utc::now() + store.config.memory_lifespan,
-                        }
-                    };
+                        store_wg.insert(session.id.clone(), Mutex::new(session));
 
-                    let new_id = SQLxSessionID(session.id.clone());
-
-                    store_wg.insert(session.id.clone(), Mutex::new(session));
-
-                    new_id
-                }
-            }).clone(),
+                        new_id
+                    }
+                })
+                .clone(),
 
             store: store.inner().clone(),
         })
@@ -419,7 +531,7 @@ impl SQLxSession {
     }
 
     pub fn set(&self, key: &str, value: impl Serialize) {
-        let value = serde_json::to_string(&value).unwrap_or("".to_string());
+        let value = serde_json::to_string(&value).unwrap_or_else(|_| "".to_string());
 
         self.tap(|sess| {
             if sess.data.get(key) != Some(&value) {
@@ -454,121 +566,11 @@ pub struct SqlxSessionFairing {
 }
 
 impl SqlxSessionFairing {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set session database pools max connections limit.
+    /// Creates the SQLx Fairing.
     ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn set_max_connections(mut self, max: u32) -> SqlxSessionFairing {
-        let max = std::cmp::max(max, 1);
-        self.config.max_connections = max;
-        self
-    }
-
-    /// Set session lifetime (expiration time) within database storage.
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_lifetime(mut self, time: Duration) -> Self {
-        self.config.lifespan = time;
-        self
-    }
-
-    /// Set session lifetime (expiration time) within Memory storage.
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_memory_lifetime(mut self, time: Duration) -> Self {
-        self.config.memory_lifespan = time;
-        self
-    }
-
-    /// Set session cookie name
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_cookie_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
-        self.config.cookie_name = name.into();
-        self
-    }
-
-    /// Set session cookie length
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_cookie_len(mut self, length: usize) -> Self {
-        self.config.cookie_len = length;
-        self
-    }
-
-    /// Set session cookie path
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_cookie_path(mut self, path: impl Into<Cow<'static, str>>) -> Self {
-        self.config.cookie_path = path.into();
-        self
-    }
-
-    /// Set session database name
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_database(mut self, database: impl Into<Cow<'static, str>>) -> Self {
-        self.config.database = database.into();
-        self
-    }
-
-    /// Set session username
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_username(mut self, username: impl Into<Cow<'static, str>>) -> Self {
-        self.config.username = username.into();
-        self
-    }
-
-    /// Set session user password
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_password(mut self, password: impl Into<Cow<'static, str>>) -> Self {
-        self.config.password = password.into();
-        self
-    }
-
-    /// Set session database table name
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_table_name(mut self, table_name: impl Into<Cow<'static, str>>) -> Self {
-        self.config.table_name = table_name.into();
-        self
-    }
-
-    /// Set session database hostname
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_host(mut self, host: impl Into<Cow<'static, str>>) -> Self {
-        self.config.host = host.into();
-        self
-    }
-
-    /// Set session database port
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_port(mut self, port: u16) -> Self {
-        self.config.port = port;
-        self
-    }
-
-    /// Set session database logging level
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_loglevel(mut self, level: LevelFilter) -> Self {
-        self.config.log_level = level;
-        self
-    }
-
-    /// Set session database Poll Directly used for sharing Poll.
-    ///
-    /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_poll(mut self, poll: PgPool) -> Self {
-        self.poll = Some(poll);
-        self
+    /// Use before passing it to `rocket.attach()`
+    pub fn new(config: SqlxSessionConfig, poll: Option<PgPool>) -> Self {
+        Self { config, poll }
     }
 }
 
@@ -577,11 +579,14 @@ impl Fairing for SqlxSessionFairing {
     fn info(&self) -> Info {
         Info {
             name: "SQLxSession",
-            kind: fairing::Kind::Attach | fairing::Kind::Response,
+            kind: fairing::Kind::Ignite | fairing::Kind::Response,
         }
     }
 
-    async fn on_attach(&self, rocket: Rocket) -> std::result::Result<Rocket, Rocket> {
+    async fn on_ignite(
+        &self,
+        rocket: Rocket<Build>,
+    ) -> std::result::Result<Rocket<Build>, Rocket<Build>> {
         let session_store = if let Some(poll) = &self.poll {
             SQLxSessionStore::new(poll.clone(), self.config.clone())
         } else {
@@ -605,10 +610,7 @@ impl Fairing for SqlxSessionFairing {
             SQLxSessionStore::new(pg_pool, self.config.clone())
         };
 
-        match session_store.migrate().await {
-            Ok(()) => {}
-            Err(_) => {}
-        }
+        if let Ok(()) = session_store.migrate().await {}
 
         Ok(rocket.manage(session_store))
     }
@@ -617,7 +619,7 @@ impl Fairing for SqlxSessionFairing {
         let session_id = request.local_cache(|| SQLxSessionID("".to_string()));
 
         if !session_id.0.is_empty() {
-            if let Outcome::Success(store) = request.guard::<State<SQLxSessionStore>>().await {
+            if let Outcome::Success(store) = request.guard::<&State<SQLxSessionStore>>().await {
                 let store_ug = store.inner.upgradable_read();
 
                 if let Some(m) = store_ug.get(&session_id.0) {
