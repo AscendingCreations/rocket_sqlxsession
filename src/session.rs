@@ -34,23 +34,23 @@ pub struct SqlxSessionConfig {
     /// Sessions lifespan
     lifespan: Duration,
     /// Session cookie name
-    cookie_name: Cow<'static, str>,
+    cookie_name: String,
     /// Session cookie path
-    cookie_path: Cow<'static, str>,
+    cookie_path: String,
     /// Session ID character length
     cookie_len: usize,
     /// Session Database name
-    database: Cow<'static, str>,
+    database: String,
     /// Session Database username for login
-    username: Cow<'static, str>,
+    username: String,
     /// Session Database password for login
-    password: Cow<'static, str>,
+    password: String,
     /// Session Database Host address
-    host: Cow<'static, str>,
+    host: String,
     /// Session Database Port address
     port: u16,
     /// Session Database table name default is async_sessions
-    table_name: Cow<'static, str>,
+    table_name: String,
     /// Session Database Max Poll Connections. Can not be 0
     max_connections: u32,
     /// Session Memory lifespan, deturmines when to unload it from memory
@@ -90,7 +90,7 @@ impl SqlxSessionConfig {
     /// Set session cookie name
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_cookie_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_cookie_name(mut self, name: &str) -> Self {
         self.cookie_name = name.into();
         self
     }
@@ -106,7 +106,7 @@ impl SqlxSessionConfig {
     /// Set session cookie path
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_cookie_path(mut self, path: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_cookie_path(mut self, path: &str) -> Self {
         self.cookie_path = path.into();
         self
     }
@@ -114,7 +114,7 @@ impl SqlxSessionConfig {
     /// Set session database name
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_database(mut self, database: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_database(mut self, database: &str) -> Self {
         self.database = database.into();
         self
     }
@@ -122,7 +122,7 @@ impl SqlxSessionConfig {
     /// Set session username
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_username(mut self, username: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_username(mut self, username: &str) -> Self {
         self.username = username.into();
         self
     }
@@ -130,7 +130,7 @@ impl SqlxSessionConfig {
     /// Set session user password
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_password(mut self, password: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_password(mut self, password: &str) -> Self {
         self.password = password.into();
         self
     }
@@ -138,7 +138,7 @@ impl SqlxSessionConfig {
     /// Set session database table name
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_table_name(mut self, table_name: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_table_name(mut self, table_name: &str) -> Self {
         self.table_name = table_name.into();
         self
     }
@@ -146,7 +146,7 @@ impl SqlxSessionConfig {
     /// Set session database hostname
     ///
     /// Call on the fairing before passing it to `rocket.attach()`
-    pub fn with_host(mut self, host: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_host(mut self, host: &str) -> Self {
         self.host = host.into();
         self
     }
