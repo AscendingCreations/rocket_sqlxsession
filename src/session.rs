@@ -632,7 +632,12 @@ impl Fairing for SqlxSessionFairing {
                 }
             }
 
-            response.adjoin_header(request.cookies().get(&self.config.cookie_name).unwrap());
+            let cookie = request
+                .cookies()
+                .get_private(&self.config.cookie_name)
+                .unwrap();
+
+            response.adjoin_header(cookie);
         }
     }
 }
