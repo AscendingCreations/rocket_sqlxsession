@@ -634,7 +634,7 @@ impl Fairing for SqlxSessionFairing {
 
             let cookie = request
                 .cookies()
-                .get_private(&self.config.cookie_name)
+                .get_private_pending(&self.config.cookie_name)
                 .unwrap();
 
             response.adjoin_header(cookie);
