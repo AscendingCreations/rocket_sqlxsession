@@ -385,8 +385,7 @@ impl<'r> FromRequest<'r> for SQLxSession {
                     let store_ug = store.inner.upgradable_read();
 
                     // Resolve session ID
-                    let id = if let Some(cookie) =
-                        request.cookies().get(&store.config.cookie_name)
+                    let id = if let Some(cookie) = request.cookies().get(&store.config.cookie_name)
                     {
                         SQLxSessionID(cookie.value().to_string())
                     } else {
@@ -578,7 +577,7 @@ impl Fairing for SqlxSessionFairing {
     fn info(&self) -> Info {
         Info {
             name: "SQLxSession",
-            kind: fairing::Kind::Ignite | fairing::Kind::Response | fairing::Kind::Singleton,
+            kind: fairing::Kind::Ignite | fairing::Kind::Response,
         }
     }
 
