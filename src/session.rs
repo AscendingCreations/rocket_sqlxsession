@@ -17,7 +17,6 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     ConnectOptions,
 };
-
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -387,7 +386,7 @@ impl<'r> FromRequest<'r> for SQLxSession {
 
                     // Resolve session ID
                     let id = if let Some(cookie) =
-                        request.cookies().get_private(&store.config.cookie_name)
+                        request.cookies().get(&store.config.cookie_name)
                     {
                         SQLxSessionID(cookie.value().to_string())
                     } else {
@@ -473,10 +472,10 @@ impl<'r> FromRequest<'r> for SQLxSession {
                                 }
                             });
 
-                            request.cookies().add_private(Cookie::new(
-                                store.config.cookie_name.clone(),
-                                new_id.0.clone(),
-                            ));
+                            let cookie =
+                                Cookie::new(store.config.cookie_name.clone(), new_id.0.clone());
+
+                            request.cookies().add(cookie);
 
                             SQLxSessionData {
                                 id: new_id.0.clone(),
@@ -579,7 +578,7 @@ impl Fairing for SqlxSessionFairing {
     fn info(&self) -> Info {
         Info {
             name: "SQLxSession",
-            kind: fairing::Kind::Ignite | fairing::Kind::Response,
+            kind: fairing::Kind::Ignite | fairing::Kind::Response | fairing::Kind::Singleton,
         }
     }
 
@@ -631,13 +630,6 @@ impl Fairing for SqlxSessionFairing {
                     }
                 }
             }
-
-            let cookie = request
-                .cookies()
-                .get_private_pending(&self.config.cookie_name)
-                .unwrap();
-
-            response.adjoin_header(cookie);
         }
     }
 }
